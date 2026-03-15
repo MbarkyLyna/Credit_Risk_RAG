@@ -54,7 +54,7 @@ def build_vectorstore():
     docs = splitter.create_documents([CREDIT_KNOWLEDGE])
 
     embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
+        model_name="sentence-transformers/paraphrase-MiniLM-L3-v2"
     )
     vectorstore = Chroma.from_documents(
         documents=docs,
@@ -65,7 +65,7 @@ def build_vectorstore():
 
 def load_vectorstore():
     embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
+        model_name="sentence-transformers/paraphrase-MiniLM-L3-v2"
     )
     return Chroma(
         persist_directory="./chroma_db",

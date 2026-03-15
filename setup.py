@@ -24,6 +24,7 @@ def train_and_save():
     df = df[df['age'] > 18]
     df = df[df['age'] < 100]
     df = df[df['RevolvingUtilizationOfUnsecuredLines'] <= 1]
+    df = df.sample(n=20000, random_state=42)
 
     X = df[FEATURES]
     y = df['SeriousDlqin2yrs']
