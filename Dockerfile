@@ -1,7 +1,14 @@
-FROM python:3.11-slim
+FROM python:3.10-slim
+
 WORKDIR /app
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
 COPY . .
-EXPOSE 8501
-CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8501"]
+
+RUN python setup.py
+
+EXPOSE 7860
+
+CMD ["streamlit", "run", "app/streamlit_app.py", "--server.port=7860", "--server.address=0.0.0.0"]
