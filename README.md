@@ -84,7 +84,7 @@ python setup.py
 streamlit run app/streamlit_app.py
 ```
 
-### Optional — FastAPI backend
+### Optional: FastAPI backend
 ```bash
 uvicorn src.api.main:app --reload
 ```
@@ -104,7 +104,7 @@ API docs at `http://localhost:8000/docs`
 
 ## Author
 
-**Lyna Mbarky** — AI Engineering Student
+**Lyna Mbarky** : AI Engineering Student
 
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Lyna_Mbarky-blue)](https://linkedin.com/in/lyna-m-barky-4899b51a1)
 [![GitHub](https://img.shields.io/badge/GitHub-MbarkyLyna-black)](https://github.com/MbarkyLyna)
