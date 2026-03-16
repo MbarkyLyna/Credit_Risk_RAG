@@ -3,6 +3,10 @@ import pandas as pd
 import joblib
 import shap
 import sys
+import os
+
+os.environ.get("GROQ_API_KEY")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(".")
 
 from src.rag.embeddings import build_vectorstore, load_vectorstore
@@ -10,15 +14,6 @@ from src.rag.chain import ask_rag
 
 from dotenv import load_dotenv
 load_dotenv()
-
-# ── Load model ─────────────────────────────────────────────────────────────────
-@st.cache_resource
-def load_model():
-    model = joblib.load("src/model/credit_model.pkl")
-    explainer = shap.TreeExplainer(model)
-    return model, explainer
-
-model, explainer = load_model()
 
 FEATURES = [
     'RevolvingUtilizationOfUnsecuredLines', 'age',
@@ -28,12 +23,31 @@ FEATURES = [
     'NumberOfTime60-89DaysPastDueNotWorse', 'NumberOfDependents'
 ]
 
+@st.cache_resource
+def load_model():
+    if not os.path.exists("src/model/credit_model.pkl"):
+        import subprocess
+        subprocess.run(["python", "setup.py"], check=True)
+    model = joblib.load("src/model/credit_model.pkl")
+    explainer = shap.TreeExplainer(model)
+    return model, explainer
+
+@st.cache_resource
+def load_rag():
+    if not os.path.exists("chroma_db"):
+        build_vectorstore()
+    return load_vectorstore()
+
 # ── UI ─────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Credit Risk Analyzer", page_icon="", layout="wide")
-st.title(" Credit Risk Assessment System")
+st.title("Credit Risk Assessment System")
 st.caption("Predicts repayment behavior using XGBoost + SHAP explainability + RAG-powered Q&A")
 
-tab1, tab2 = st.tabs([" Risk Assessment", " Ask the Analyst"])
+with st.spinner("Loading model and knowledge base..."):
+    model, explainer = load_model()
+    load_rag()
+
+tab1, tab2 = st.tabs(["Risk Assessment", "Ask the Analyst"])
 
 with tab1:
     st.subheader("Applicant Profile")
@@ -94,22 +108,23 @@ with tab1:
         with col_b:
             st.subheader("Top Risk Factors")
             for f in result['top_factors']:
-                direction = "⬆ increases" if f['impact'] > 0 else "⬇ decreases"
+                direction = "increases" if f['impact'] > 0 else "decreases"
                 st.write(f"**{f['feature']}** — {direction} risk (impact: {f['impact']:.4f})")
 
 with tab2:
     st.subheader("Ask the Credit Analyst")
     st.caption("Ask anything about the assessment, risk factors, or credit behavior.")
 
+    if not st.session_state.get('last_result'):
+        st.info("Run a risk assessment in the first tab to get context-aware answers.")
+
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
-    # Display chat history
     for msg in st.session_state.chat_history:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
 
-    # Input at bottom
     question = st.chat_input("Ask a question...")
 
     if question:
