@@ -47,7 +47,7 @@ with st.spinner("Loading model and knowledge base..."):
     model, explainer = load_model()
     load_rag()
 
-tab1, tab2 = st.tabs(["Risk Assessment", "Ask the Analyst"])
+tab1, tab2, tab3 = st.tabs(["Risk Assessment", "Ask the Analyst", "Document Upload"])
 
 with tab1:
     st.subheader("Applicant Profile")
@@ -109,7 +109,7 @@ with tab1:
             st.subheader("Top Risk Factors")
             for f in result['top_factors']:
                 direction = "increases" if f['impact'] > 0 else "decreases"
-                st.write(f"**{f['feature']}** — {direction} risk (impact: {f['impact']:.4f})")
+                st.write(f"**{f['feature']}**  {direction} risk (impact: {f['impact']:.4f})")
 
 with tab2:
     st.subheader("Ask the Credit Analyst")
@@ -138,3 +138,85 @@ with tab2:
                 answer = ask_rag(question, applicant_context=context)
             st.write(answer)
             st.session_state.chat_history.append({"role": "assistant", "content": answer})
+            
+with tab3:
+    st.subheader("Loan Document Analysis")
+    st.caption("Upload a PDF loan application, the agent will extract applicant data and run automatic risk assessment.")
+
+    uploaded_file = st.file_uploader("Upload loan application PDF", type=["pdf"])
+
+    if uploaded_file is not None:
+        with st.spinner("Extracting applicant data from document..."):
+            import tempfile
+            import shutil
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                shutil.copyfileobj(uploaded_file, tmp)
+                tmp_path = tmp.name
+
+            try:
+                from src.agents.document_extractor import extract_applicant_profile
+                profile = extract_applicant_profile(tmp_path)
+                os.remove(tmp_path)
+
+                confidence = profile.pop("confidence_score")
+                missing = profile.pop("missing_fields")
+
+                st.success(f"Extraction complete. Confidence: {confidence*100:.0f}%")
+
+                if missing:
+                    st.warning(f"Could not extract: {', '.join(missing)} , default values used.")
+
+                st.subheader("Extracted Applicant Profile")
+                st.json(profile)
+
+                # Auto-run risk assessment
+                st.subheader("Automatic Risk Assessment")
+                with st.spinner("Running risk model..."):
+                    # Map field names back to model format
+                    applicant = {
+                        'RevolvingUtilizationOfUnsecuredLines': profile['RevolvingUtilizationOfUnsecuredLines'],
+                        'age': profile['age'],
+                        'NumberOfTime30-59DaysPastDueNotWorse': profile['NumberOfTime30_59DaysPastDueNotWorse'],
+                        'DebtRatio': profile['DebtRatio'],
+                        'MonthlyIncome': profile['MonthlyIncome'],
+                        'NumberOfOpenCreditLinesAndLoans': profile['NumberOfOpenCreditLinesAndLoans'],
+                        'NumberOfTimes90DaysLate': profile['NumberOfTimes90DaysLate'],
+                        'NumberRealEstateLoansOrLines': profile['NumberRealEstateLoansOrLines'],
+                        'NumberOfTime60-89DaysPastDueNotWorse': profile['NumberOfTime60_89DaysPastDueNotWorse'],
+                        'NumberOfDependents': profile['NumberOfDependents']
+                    }
+
+                    input_df = pd.DataFrame([applicant])
+                    proba = model.predict_proba(input_df)[0][1]
+                    sv = explainer.shap_values(input_df)[0]
+
+                    factors = sorted(
+                        zip(FEATURES, sv),
+                        key=lambda x: abs(x[1]),
+                        reverse=True
+                    )[:5]
+
+                    result = {
+                        "default_probability": round(float(proba), 4),
+                        "risk_label": "HIGH RISK" if proba > 0.5 else "LOW RISK",
+                        "top_factors": [{"feature": f, "impact": round(float(v), 4)} for f, v in factors]
+                    }
+
+                    st.session_state['last_result'] = result
+
+                    color = "🔴" if result['risk_label'] == "HIGH RISK" else "🟢"
+                    st.metric("Risk Assessment", f"{color} {result['risk_label']}")
+                    st.metric("Default Probability", f"{result['default_probability']*100:.1f}%")
+
+                    st.subheader("Top Risk Factors")
+                    for f in result['top_factors']:
+                        direction = "increases" if f['impact'] > 0 else "decreases"
+                        st.write(f"**{f['feature']}** — {direction} risk (impact: {f['impact']:.4f})")
+
+                    st.info("Switch to the 'Ask the Analyst' tab to ask questions about this assessment.")
+
+            except Exception as e:
+                st.error(f"Extraction failed: {str(e)}")
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)

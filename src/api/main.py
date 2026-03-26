@@ -7,7 +7,10 @@ import shap
 import os
 from dotenv import load_dotenv
 from src.rag.chain import ask_rag
-
+from src.agents.document_extractor import extract_applicant_profile
+import shutil
+from fastapi import UploadFile, File
+import tempfile
 load_dotenv()
 
 app = FastAPI(title="Credit Risk API")
@@ -82,6 +85,23 @@ def assess(data: ApplicantInput):
             for f, v in factors
         ]
     }
+    
+@app.post("/extract")
+async def extract_from_document(file: UploadFile = File(...)):
+    """
+    Upload a PDF loan application and extract structured applicant profile.
+    """
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = tmp.name
+
+    try:
+        profile = extract_applicant_profile(tmp_path)
+        return profile
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        os.remove(tmp_path)
 
 
 @app.post("/chat")
