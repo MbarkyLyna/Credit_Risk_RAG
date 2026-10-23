@@ -8,6 +8,12 @@ import pdfplumber
 load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
+# Model is configurable: set GROQ_MODEL in .env or in Streamlit secrets to switch
+# without touching the code (e.g. "qwen/qwen3.6-27b").
+# Keep this in sync with src/rag/chain.py (or move it to a shared config module).
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+
+
 # ── Pydantic schema — matches your 10 XGBoost features exactly ────────────────
 class ApplicantProfile(BaseModel):
     RevolvingUtilizationOfUnsecuredLines: float = Field(
@@ -47,6 +53,7 @@ class ApplicantProfile(BaseModel):
         description="List of fields that could not be found in the document."
     )
 
+
 # ── PDF text extraction ────────────────────────────────────────────────────────
 def extract_text_from_pdf(pdf_path: str) -> str:
     text = ""
@@ -56,6 +63,7 @@ def extract_text_from_pdf(pdf_path: str) -> str:
             if page_text:
                 text += page_text + "\n"
     return text.strip()
+
 
 # ── Agent ─────────────────────────────────────────────────────────────────────
 def extract_applicant_profile(pdf_path: str) -> dict:
@@ -94,16 +102,27 @@ Document:
 
 Return ONLY the JSON object, no explanation, no markdown, no backticks."""
 
+    kwargs = {}
+    # gpt-oss models are reasoning models: keep reasoning short so it doesn't
+    # eat the token budget and leave the answer empty or truncated.
+    if "gpt-oss" in GROQ_MODEL:
+        kwargs["reasoning_effort"] = "low"
+
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model=GROQ_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=1000
+        max_tokens=1500,  # raised from 1000 to leave room for reasoning tokens
+        response_format={"type": "json_object"},  # remove if the chosen model rejects it
+        **kwargs,
     )
 
-    raw_output = response.choices[0].message.content.strip()
+    raw_output = (response.choices[0].message.content or "").strip()
 
     # Clean any accidental markdown
     raw_output = raw_output.replace("```json", "").replace("```", "").strip()
+
+    if not raw_output:
+        raise ValueError("The model returned an empty response. Try again or raise max_tokens.")
 
     extracted = json.loads(raw_output)
 
