@@ -6,9 +6,14 @@ from src.rag.embeddings import load_vectorstore
 load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
+# Model is configurable: set GROQ_MODEL in .env or in Streamlit secrets to switch
+# without touching the code (e.g. "qwen/qwen3.6-27b").
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+
+
 def ask_rag(question: str, applicant_context: dict = None) -> str:
     vectorstore = load_vectorstore()
-    
+
     # Direct similarity search — bypasses broken retriever
     docs = vectorstore.similarity_search(question, k=3)
     context = "\n\n".join([d.page_content for d in docs])
@@ -41,9 +46,16 @@ Question: {question}
 
 Answer:"""
 
+    kwargs = {}
+    # gpt-oss models are reasoning models: keep reasoning short so it doesn't
+    # eat the token budget and leave the answer empty or truncated.
+    if "gpt-oss" in GROQ_MODEL:
+        kwargs["reasoning_effort"] = "low"
+
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model=GROQ_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=500
+        max_tokens=1500,  # raised from 500 to leave room for reasoning tokens
+        **kwargs,
     )
     return response.choices[0].message.content
